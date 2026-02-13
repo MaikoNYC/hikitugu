@@ -1,0 +1,17 @@
+{
+  "name": "hikitugu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered handover document generator integrating Google Calendar, Slack, and Spreadsheets",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "dev:backend": "cd backend && uvicorn app.main:app --reload --port 8000",
+    "lint": "npm run lint --workspace=frontend",
+    "supabase:start": "npx supabase start",
+    "supabase:migrate": "npx supabase db push"
+  }
+}
