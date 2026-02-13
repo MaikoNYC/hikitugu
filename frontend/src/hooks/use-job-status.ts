@@ -1,23 +1,51 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { GenerationJob } from "@/types/database";
+import { useState, useEffect, useRef } from "react";
+import type { JobStatus } from "@/types/api";
+import { apiClient } from "@/lib/api-client";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useJobStatus(jobId: string | null) {
-  const [job, setJob] = useState<GenerationJob | null>(null);
+  const { session } = useAuth();
+  const [job, setJob] = useState<JobStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId || !session?.access_token) return;
 
-    // TODO: Subscribe to Supabase Realtime for generation_jobs updates
-    // Fallback: poll GET /api/jobs/{jobId}
     setLoading(true);
 
-    return () => {
-      // Cleanup subscription
+    const poll = async () => {
+      try {
+        const res = await apiClient.getWithToken<JobStatus>(
+          `/api/documents/jobs/${jobId}`,
+          session.access_token
+        );
+        setJob(res);
+        setLoading(false);
+
+        if (res.status === "completed" || res.status === "failed") {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        }
+      } catch {
+        setLoading(false);
+      }
     };
-  }, [jobId]);
+
+    poll();
+    intervalRef.current = setInterval(poll, 3000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [jobId, session?.access_token]);
 
   return { job, loading };
 }

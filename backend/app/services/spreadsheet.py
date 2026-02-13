@@ -1,5 +1,10 @@
 """Google Sheets integration service."""
 
+import asyncio
+
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+
 
 class SheetsService:
     """Fetches spreadsheet data from Google Sheets API."""
@@ -13,8 +18,29 @@ class SheetsService:
         Returns:
             List of spreadsheet summary dicts.
         """
-        # TODO: Use google-api-python-client to call Drive API
-        return []
+        credentials = Credentials(token=access_token)
+        service = build("drive", "v3", credentials=credentials)
+
+        results = await asyncio.to_thread(
+            lambda: service.files()
+            .list(
+                q="mimeType='application/vnd.google-apps.spreadsheet'",
+                fields="files(id, name, modifiedTime, webViewLink)",
+                orderBy="modifiedTime desc",
+            )
+            .execute()
+        )
+
+        files = results.get("files", [])
+        return [
+            {
+                "id": f["id"],
+                "title": f.get("name", ""),
+                "url": f.get("webViewLink", ""),
+                "last_modified": f.get("modifiedTime", ""),
+            }
+            for f in files
+        ]
 
     async def get_spreadsheet(
         self,
@@ -32,5 +58,42 @@ class SheetsService:
         Returns:
             Spreadsheet detail dict.
         """
-        # TODO: Use google-api-python-client to call Sheets API
-        return {"id": spreadsheet_id, "title": "", "sheets": []}
+        credentials = Credentials(token=access_token)
+        service = build("sheets", "v4", credentials=credentials)
+
+        metadata = await asyncio.to_thread(
+            lambda: service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id)
+            .execute()
+        )
+
+        title = metadata.get("properties", {}).get("title", "")
+        sheet_list = metadata.get("sheets", [])
+
+        sheets_data = []
+        for sheet in sheet_list:
+            props = sheet.get("properties", {})
+            name = props.get("title", "")
+            if sheet_name and name != sheet_name:
+                continue
+
+            values_result = await asyncio.to_thread(
+                lambda n=name: service.spreadsheets()
+                .values()
+                .get(spreadsheetId=spreadsheet_id, range=n)
+                .execute()
+            )
+            values = values_result.get("values", [])
+
+            headers = values[0] if values else []
+            rows = values[1:] if len(values) > 1 else []
+
+            sheets_data.append(
+                {
+                    "name": name,
+                    "headers": headers,
+                    "rows": rows,
+                }
+            )
+
+        return {"id": spreadsheet_id, "title": title, "sheets": sheets_data}

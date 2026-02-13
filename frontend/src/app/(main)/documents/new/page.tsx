@@ -2,11 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiClient } from "@/lib/api-client";
+import { useAuth } from "@/hooks/use-auth";
+import type { GenerationResult } from "@/types/api";
 
 type Step = 1 | 2 | 3;
 
+interface ProposalResult {
+  document_id: string;
+  proposal_id: string;
+  proposed_structure: Array<{
+    title: string;
+    description: string;
+    estimated_sources: string[];
+  }>;
+}
+
 export default function NewDocumentPage() {
   const router = useRouter();
+  const { session } = useAuth();
   const [step, setStep] = useState<Step>(1);
   const [title, setTitle] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
@@ -14,13 +28,45 @@ export default function NewDocumentPage() {
   const [dateTo, setDateTo] = useState("");
   const [dataSources, setDataSources] = useState<string[]>([]);
   const [generationMode, setGenerationMode] = useState<"template" | "ai_proposal">("ai_proposal");
+  const [templateId, setTemplateId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    // TODO: Call POST /api/documents/generate or /api/documents/propose
-    if (generationMode === "ai_proposal") {
-      router.push("/documents/stub-id/proposal");
-    } else {
-      router.push("/documents/stub-id");
+    if (!session?.access_token) return;
+    setSubmitting(true);
+    try {
+      if (generationMode === "ai_proposal") {
+        const res = await apiClient.postWithToken<ProposalResult>(
+          "/api/documents/propose",
+          session.access_token,
+          {
+            title,
+            target_user_email: targetEmail || null,
+            date_range_start: dateFrom,
+            date_range_end: dateTo,
+            data_sources: dataSources,
+          }
+        );
+        router.push(`/documents/${res.document_id}/proposal?proposal_id=${res.proposal_id}`);
+      } else {
+        const res = await apiClient.postWithToken<GenerationResult>(
+          "/api/documents/generate",
+          session.access_token,
+          {
+            title,
+            target_user_email: targetEmail || null,
+            template_id: templateId,
+            date_range_start: dateFrom,
+            date_range_end: dateTo,
+            data_sources: dataSources,
+          }
+        );
+        router.push(`/documents/${res.document_id}`);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -118,6 +164,18 @@ export default function NewDocumentPage() {
               <p className="text-sm text-gray-500">アップロード済みのテンプレートに沿って生成</p>
             </div>
           </label>
+          {generationMode === "template" && (
+            <div className="ml-7">
+              <label className="block text-sm font-medium text-gray-700 mb-1">テンプレートID</label>
+              <input
+                type="text"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className="w-full border rounded-lg p-2"
+                placeholder="テンプレートIDを入力"
+              />
+            </div>
+          )}
           <label className="flex items-start gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
             <input type="radio" name="mode" checked={generationMode === "ai_proposal"} onChange={() => setGenerationMode("ai_proposal")} className="mt-1" />
             <div>
@@ -127,7 +185,13 @@ export default function NewDocumentPage() {
           </label>
           <div className="flex gap-4">
             <button onClick={() => setStep(2)} className="px-6 py-2 border rounded-lg hover:bg-gray-50">前へ</button>
-            <button onClick={handleSubmit} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">生成開始</button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {submitting ? "処理中..." : "生成開始"}
+            </button>
           </div>
         </div>
       )}
