@@ -1,7 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import JSZip from "https://esm.sh/jszip@3.10.1";
-import * as pdfjsLib from "https://esm.sh/pdfjs-dist@3.11.174/build/pdf.js?target=deno";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,52 +98,26 @@ const HEADING_PATTERN =
 
 /**
  * Parse a PDF file to extract heading structure.
- * Uses pdfjs-dist for text extraction, then regex + heuristics.
+ * Uses unpdf (built on pdfjs-dist without canvas dependency) for text extraction.
  */
 async function parsePdf(fileBytes: ArrayBuffer): Promise<{ sections: Section[] }> {
-  // Disable worker (not available in Deno edge runtime)
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  const { extractText } = await import("https://esm.sh/unpdf@0.12.1");
 
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(fileBytes) }).promise;
+  const { text } = await extractText(new Uint8Array(fileBytes));
   const sections: Section[] = [];
   let order = 0;
 
-  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
-    const page = await doc.getPage(pageNum);
-    const textContent = await page.getTextContent();
+  for (const line of text.split("\n")) {
+    const stripped = line.trim();
+    if (!stripped) continue;
 
-    // Reconstruct lines from text items
-    const lines: string[] = [];
-    let currentLine = "";
-    let lastY: number | null = null;
-
-    for (const item of textContent.items) {
-      if (!("str" in item)) continue;
-      const y = (item as { transform: number[] }).transform[5];
-      // New line if Y position changes significantly
-      if (lastY !== null && Math.abs(y - lastY) > 2) {
-        if (currentLine.trim()) {
-          lines.push(currentLine.trim());
-        }
-        currentLine = "";
-      }
-      currentLine += (item as { str: string }).str;
-      lastY = y;
-    }
-    if (currentLine.trim()) {
-      lines.push(currentLine.trim());
-    }
-
-    for (const line of lines) {
-      if (!line) continue;
-      // Match heading pattern or uppercase short text (< 60 chars)
-      if (
-        HEADING_PATTERN.test(line) ||
-        (line.length < 60 && line === line.toUpperCase() && /[A-Z]/.test(line))
-      ) {
-        order++;
-        sections.push({ order, title: line, level: 1 });
-      }
+    // Match heading pattern or uppercase short text (< 60 chars)
+    if (
+      HEADING_PATTERN.test(stripped) ||
+      (stripped.length < 60 && stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped))
+    ) {
+      order++;
+      sections.push({ order, title: stripped, level: 1 });
     }
   }
 
