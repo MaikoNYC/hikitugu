@@ -1,8 +1,25 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function LoginPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace("/dashboard");
+      }
+    });
+  }, [router]);
+
   const handleGoogleLogin = () => {
-    window.location.href = "/api/auth/google";
+    window.location.href = `${API_URL}/api/auth/google`;
   };
 
   return (
