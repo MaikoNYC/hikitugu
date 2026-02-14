@@ -131,18 +131,21 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let templateId = "";
+
+  try {
     const { template_id, file_path, file_type }: ParseRequest = await req.json();
+    templateId = template_id;
 
     // Update status to processing
     await supabase
       .from("templates")
       .update({ status: "processing" })
-      .eq("id", template_id);
+      .eq("id", templateId);
 
     // Download file from Storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -174,14 +177,14 @@ serve(async (req) => {
         status: "ready",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", template_id);
+      .eq("id", templateId);
 
     if (updateError) {
       throw new Error(`Failed to update template: ${updateError.message}`);
     }
 
     return new Response(
-      JSON.stringify({ success: true, template_id, sections: parsedStructure.sections.length }),
+      JSON.stringify({ success: true, template_id: templateId, sections: parsedStructure.sections.length }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -190,20 +193,16 @@ serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
 
-    // Try to update template status to error
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
-      const body = await new Request(req.url, { body: req.body }).json().catch(() => ({}));
-      if (body.template_id) {
+    // Update template status to error (best effort)
+    if (templateId) {
+      try {
         await supabase
           .from("templates")
           .update({ status: "error", updated_at: new Date().toISOString() })
-          .eq("id", body.template_id);
+          .eq("id", templateId);
+      } catch {
+        // Best effort
       }
-    } catch {
-      // Best effort
     }
 
     return new Response(
