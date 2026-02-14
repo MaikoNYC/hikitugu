@@ -59,7 +59,7 @@ export default function ProposalPage() {
           approved_structure: proposal?.proposed_structure || null,
         }
       );
-      router.push(`/documents/${res.document_id}`);
+      router.push(`/documents/${res.document_id}?job_id=${res.job_id}`);
     } catch {
       // ignore
     } finally {

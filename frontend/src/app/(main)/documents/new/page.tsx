@@ -61,7 +61,7 @@ export default function NewDocumentPage() {
             data_sources: dataSources,
           }
         );
-        router.push(`/documents/${res.document_id}`);
+        router.push(`/documents/${res.document_id}?job_id=${res.job_id}`);
       }
     } catch {
       // ignore

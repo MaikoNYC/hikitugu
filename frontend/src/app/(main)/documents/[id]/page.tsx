@@ -1,10 +1,11 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { useJobStatus } from "@/hooks/use-job-status";
 
 interface Section {
   id: string;
@@ -30,11 +31,16 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function DocumentDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const documentId = params.id as string;
+  const jobId = searchParams.get("job_id");
   const [doc, setDoc] = useState<DocumentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+
+  const isGenerating = doc?.status === "generating" && !!jobId;
+  const { job } = useJobStatus(isGenerating ? jobId : null);
 
   const fetchDocument = useCallback(async () => {
     if (!session?.access_token) return;
@@ -57,6 +63,13 @@ export default function DocumentDetailPage() {
   useEffect(() => {
     fetchDocument();
   }, [fetchDocument]);
+
+  // Auto-refetch when generation completes
+  useEffect(() => {
+    if (job?.status === "completed") {
+      fetchDocument();
+    }
+  }, [job?.status, fetchDocument]);
 
   const handleDownload = async (format: "pdf" | "docx") => {
     if (!session?.access_token) return;
@@ -177,36 +190,64 @@ export default function DocumentDetailPage() {
         </div>
       )}
 
-      <div className="space-y-6">
-        {doc.sections.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-gray-500 text-center py-8">
-              セクションがまだありません
-            </p>
-          </div>
-        ) : (
-          doc.sections.map((section) => (
-            <div key={section.id} className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">{section.title}</h2>
-                <div className="flex items-center gap-2">
-                  {section.source_tags.map((tag) => (
-                    <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                      {tag}
-                    </span>
-                  ))}
-                  {section.is_ai_generated && (
-                    <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">AI</span>
-                  )}
-                </div>
+      {isGenerating && job ? (
+        <div className="bg-white rounded-lg shadow p-6">
+          {job.status === "failed" ? (
+            <div className="text-center py-4">
+              <p className="text-red-600 font-medium mb-2">生成に失敗しました</p>
+              {job.error_message && (
+                <p className="text-sm text-red-500">{job.error_message}</p>
+              )}
+            </div>
+          ) : (
+            <div className="py-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-700">
+                  {job.current_step || "生成準備中..."}
+                </p>
+                <span className="text-sm text-gray-500">{job.progress}%</span>
               </div>
-              <div className="prose prose-sm max-w-none whitespace-pre-wrap">
-                {section.content || "（内容なし）"}
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                  style={{ width: `${job.progress}%` }}
+                />
               </div>
             </div>
-          ))
-        )}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {doc.sections.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-500 text-center py-8">
+                セクションがまだありません
+              </p>
+            </div>
+          ) : (
+            doc.sections.map((section) => (
+              <div key={section.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold">{section.title}</h2>
+                  <div className="flex items-center gap-2">
+                    {section.source_tags.map((tag) => (
+                      <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                        {tag}
+                      </span>
+                    ))}
+                    {section.is_ai_generated && (
+                      <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">AI</span>
+                    )}
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap">
+                  {section.content || "（内容なし）"}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
