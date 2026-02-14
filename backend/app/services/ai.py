@@ -13,7 +13,7 @@ class AIService:
     def __init__(self):
         if settings.gemini_api_key:
             genai.configure(api_key=settings.gemini_api_key)
-        self._model = genai.GenerativeModel("gemini-pro")
+        self._model = genai.GenerativeModel("gemini-2.0-flash")
 
     async def generate_section_content(
         self,
